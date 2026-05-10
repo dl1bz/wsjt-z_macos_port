@@ -3394,7 +3394,11 @@ void MainWindow::update_mode_switch_status_label ()
           QString next_band;
           if (!bands.isEmpty ())
             {
-              int idx = bands.indexOf (m_currentBand);
+              QString current_band = m_currentBand.trimmed ();
+              if (current_band.isEmpty ()) {
+                current_band = ui->bandComboBox->currentText ().trimmed ();
+              }
+              int idx = bands.indexOf (current_band);
               if (idx >= 0 && idx < bands.size () - 1)
                 {
                   next_band = bands.at (idx + 1);
@@ -3410,12 +3414,16 @@ void MainWindow::update_mode_switch_status_label ()
               int bh_remaining = 0;
               if (ui->cbAutoCall->isChecked ())
                 {
+                  // Updated audo-freq behavior hops at AutoCQ -> AutoCall when
+                  // auto mode switch is enabled.
                   bh_remaining = auto_call_left;
+                  if (ui->cb_autoModeSwitch->isChecked ()) {
+                    bh_remaining += auto_cq_total;
+                  }
                 }
               else if (ui->cbAutoCQ->isChecked ())
                 {
                   bh_remaining = auto_cq_left;
-                  if (ui->cb_autoModeSwitch->isChecked ()) bh_remaining += auto_call_total;
                 }
 
               if (bh_remaining > 0)
@@ -7082,7 +7090,6 @@ void MainWindow::processMessage (DecodedText const& message, Qt::KeyboardModifie
 
   // Z
   dxLookup(hiscall, hisgrid);
-  if (ui->cb_autoModeSwitch->isChecked()) resetAutoSwitch();
   int nw=w.size();
   if(nw>=4) {
     if(message_words.size()<4) return;
