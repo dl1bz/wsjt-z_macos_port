@@ -1280,6 +1280,8 @@ MainWindow::MainWindow(QDir const& temp_directory, bool multiple,
 
     ui->verticalLayout_3->setAlignment(ui->outAttenuation, Qt::AlignHCenter);
     ui->w_callInfo->setVisible(ui->actionCall_info->isChecked());
+    ui->l_q_email->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    ui->l_q_email->setOpenExternalLinks(true);
     qrzVisible(false);
 
 
@@ -14030,8 +14032,14 @@ void MainWindow::qrzResponseHandler(QNetworkReply * r) {
                 }
 
                 if ( reader.name() == "email") {
-                    ui->q_email->setText(reader.readElementText());
+                    QString email = reader.readElementText().trimmed();
+                    ui->q_email->setText(email);
                     ui->q_email->setCursorPosition(0);
+                    if (!email.isEmpty()) {
+                        ui->l_q_email->setText(tr("<a href=\"mailto:%1\">Email</a>").arg(email.toHtmlEscaped()));
+                    } else {
+                        ui->l_q_email->setText(tr("Email"));
+                    }
                     continue;
                 }
 
@@ -14113,6 +14121,7 @@ void MainWindow::clearCallInfo() {
     ui->ci_dxcc->clear();
     ui->q_name->clear();
     ui->q_email->clear();
+    ui->l_q_email->setText(tr("Email"));
     ui->q_state->clear();
     ui->q_zipcode->clear();
     ui->q_addr1->clear();
