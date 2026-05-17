@@ -3228,6 +3228,16 @@ void MainWindow::statusChanged()
 
 bool MainWindow::eventFilter (QObject * object, QEvent * event)
 {
+  if (object == &mode_switch_status_label && event->type () == QEvent::MouseButtonPress)
+    {
+      auto * mouse_event = static_cast<QMouseEvent *> (event);
+      if (mouse_event->button () == Qt::LeftButton && ui->cb_autoModeSwitch->isChecked ())
+        {
+          ui->cb_autoModeSwitch->setChecked (false);
+        }
+      return true;
+    }
+
   switch (event->type())
     {
     case QEvent::KeyPress:
