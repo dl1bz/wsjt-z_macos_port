@@ -1280,6 +1280,16 @@ MainWindow::MainWindow(QDir const& temp_directory, bool multiple,
 
     ui->verticalLayout_3->setAlignment(ui->outAttenuation, Qt::AlignHCenter);
     ui->w_callInfo->setVisible(ui->actionCall_info->isChecked());
+    ui->label_3->setText(tr("<a href=\"qrz-lookup\">DX Call</a>"));
+    ui->label_3->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    ui->label_3->setOpenExternalLinks(false);
+    connect(ui->label_3, &QLabel::linkActivated, this, [this](QString const &) {
+      QString dxCall = ui->ci_dxcall->text().trimmed();
+      if (dxCall.isEmpty()) dxCall = ui->dxCallEntry->text().trimmed();
+      if (!dxCall.isEmpty()) {
+        QDesktopServices::openUrl(QUrl("https://www.qrz.com/db/" + dxCall, QUrl::TolerantMode));
+      }
+    });
     ui->l_q_email->setTextInteractionFlags(Qt::TextBrowserInteraction);
     ui->l_q_email->setOpenExternalLinks(true);
     qrzVisible(false);
