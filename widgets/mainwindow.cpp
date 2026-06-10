@@ -281,6 +281,21 @@ namespace
           || (type == 6 && !msg_parts.filter ("73").isEmpty ()));
   }
 
+  bool token_matches_call (QString const& token, QString const& call)
+  {
+    auto const& base_call = Radio::base_callsign (call);
+    return !token.isEmpty ()
+      && (token == call
+          || token == base_call
+          || token.endsWith ("/" + base_call)
+          || token.startsWith (base_call + "/"));
+  }
+
+  bool composite_rr73 (QStringList const& words)
+  {
+    return words.size () > 1 && words.at (1) == "RR73;";
+  }
+
   int ms_minute_error ()
   {
     auto const& now = QDateTime::currentDateTimeUtc ();
@@ -2516,7 +2531,7 @@ void MainWindow::on_actionSettings_triggered()               //Setup Dialog
     checkMSK144ContestType();
     if (m_config.my_callsign () != callsign) {
       m_baseCall = Radio::base_callsign (m_config.my_callsign ());
-      ui->tx1->setEnabled (elide_tx1_not_allowed () || ui->tx1->isEnabled ());
+      ui->tx1->setEnabled (!elide_tx1_not_allowed () && ui->tx1->isEnabled ());
       morse_(const_cast<char *> (m_config.my_callsign ().toLatin1().constData()),
              const_cast<int *> (icw), &m_ncw, (FCL)m_config.my_callsign().length());
     }
@@ -5673,6 +5688,13 @@ void MainWindow::auto_sequence (DecodedText const& message, unsigned start_toler
   if (m_zdebug) log("msg_no_hash: " + msg_no_hash);
   if (m_zdebug) log("isStandardMessage: " +  QString::number(message.isStandardMessage()));
 
+  auto const& raw_words = msg_no_hash.split(" ",SkipEmptyParts);
+  bool composite_rr73_detected = composite_rr73 (raw_words);
+  bool composite_rr73_for_me = composite_rr73_detected
+    && (token_matches_call (raw_words.value (0), m_config.my_callsign ())
+        || token_matches_call (raw_words.value (0), m_baseCall));
+  bool terminal_signoff = is_73 || composite_rr73_detected;
+
   bool is_OK=false;
   if(m_mode=="MSK144" && msg_no_hash.indexOf(ui->dxCallEntry->text()+" R ")>0) is_OK=true;
   if (message_words.size () > 3 && (message.isStandardMessage() || (is_73 or is_OK))) {
@@ -5689,7 +5711,7 @@ void MainWindow::auto_sequence (DecodedText const& message, unsigned start_toler
                || message_words.contains ("DE")))
           || (!message.isStandardMessage () && m_mode != "MSK144")); // free text 73/RR73 except for MSK
 
-    auto const& w = msg_no_hash.split(" ",SkipEmptyParts);
+    auto const& w = raw_words;
     QString w2;
     int nrpt=0;
     if (w.size () > 2)
@@ -5736,7 +5758,7 @@ void MainWindow::auto_sequence (DecodedText const& message, unsigned start_toler
                          // being called and not already in a QSO
                          && (message_words.at(3).contains(Radio::base_callsign(ui->dxCallEntry->text()))
                              or bEU_VHF))
-                        || message_words.at(1) == m_baseCall // <de-call> RR73; ...
+                        || composite_rr73_for_me // <de-call> RR73; ...
                         // type 2 compound replies
                         || (within_tolerance &&
                             (acceptable_73 ||
@@ -5760,7 +5782,7 @@ void MainWindow::auto_sequence (DecodedText const& message, unsigned start_toler
                && message_words.at (2).contains (m_baseCall)
                && (ui->cbAutoCQ->isChecked() || ui->cbAutoCall->isChecked())
                && m_QSOProgress == CALLING
-               && !(message_words.filter (QRegularExpression {"^(73|RR73|RRR)$"}).size())
+               && !terminal_signoff
                && (m_config.processTailenders() || m_lastCall == hiscall)
                && (!m_transmitting)
                )
@@ -6802,7 +6824,7 @@ bool MainWindow::elide_tx1_not_allowed () const
 
 void MainWindow::on_txrb1_doubleClicked ()
 {
-  ui->tx1->setEnabled (elide_tx1_not_allowed () || !ui->tx1->isEnabled ());
+  ui->tx1->setEnabled (!elide_tx1_not_allowed () && !ui->tx1->isEnabled ());
   if (!ui->tx1->isEnabled ()) {
     // leave time for clicks to complete before setting txrb2
     QTimer::singleShot (500, ui->txrb2, SLOT (click ()));
@@ -6887,7 +6909,7 @@ void MainWindow::on_txb1_clicked()
 
 void MainWindow::on_txb1_doubleClicked()
 {
-  ui->tx1->setEnabled (elide_tx1_not_allowed () || !ui->tx1->isEnabled ());
+  ui->tx1->setEnabled (!elide_tx1_not_allowed () && !ui->tx1->isEnabled ());
 }
 
 void MainWindow::on_txb2_clicked()
@@ -7090,6 +7112,11 @@ void MainWindow::processMessage (DecodedText const& message, Qt::KeyboardModifie
   }
 
   QStringList w=message.clean_string ().mid(22).remove("<").remove(">").split(" ",SkipEmptyParts);
+  auto const& raw_words = message.clean_string().split(" ", SkipEmptyParts);
+  bool const composite_rr73_detected = composite_rr73(raw_words);
+  bool const composite_rr73_for_me = composite_rr73_detected
+    && (token_matches_call(raw_words.value(0), m_config.my_callsign())
+        || token_matches_call(raw_words.value(0), m_baseCall));
 
   // Z
   dxLookup(hiscall, hisgrid);
@@ -7225,7 +7252,17 @@ void MainWindow::processMessage (DecodedText const& message, Qt::KeyboardModifie
       // Without this, WD expiring during a long CQ campaign blocks the
       // very next TX cycle, so the reply never goes out (worst on FT2
       // where TR period is 2s and many CQ cycles fit inside one minute).
-      tx_watchdog (false);
+      bool postSignoffResponse = QSettings().value("postSignoffWatchdog", true).toBool()
+          && (m_QSOProgress == SIGNOFF || m_sentFirst73)
+          && message_words.size() > 4
+          && message_words.at(4).startsWith('R')
+          && (message_words.at(2).contains(m_baseCall) || "DE" == message_words.at(2));
+      if (postSignoffResponse) {
+          if (m_zdebug) log("post-signoff response received, leaving watchdog active");
+      } else {
+          tx_watchdog (false);
+      }
+
       if(message_words.at(4).contains(grid_regexp) and SpecOp::EU_VHF!=m_specOp) {
         if((SpecOp::NA_VHF==m_specOp or SpecOp::WW_DIGI==m_specOp or
             SpecOp::ARRL_DIGI==m_specOp or SpecOp::Q65_PILEUP==m_specOp)
@@ -7275,11 +7312,13 @@ void MainWindow::processMessage (DecodedText const& message, Qt::KeyboardModifie
       } else {  // no grid on end of msg
         auto const& word_3 = message_words.at (4);
         auto word_3_as_number = word_3.toInt ();
+        bool received_73 = (word_3_as_number == 73);
+        bool received_rr73 = ("RR73" == word_3);
         if (("RRR" == word_3
-             || (word_3_as_number == 73 && ROGERS == m_QSOProgress)
-             || "RR73" == word_3
+             || (received_73 && m_QSOProgress >= ROGERS)
+             || received_rr73
              || ("R" == word_3 && m_QSOProgress != REPORT))) {
-          if((m_mode=="FT4" or m_mode=="FT2") and "RR73" == word_3) m_dateTimeRcvdRR73=QDateTime::currentDateTimeUtc();
+          if((m_mode=="FT4" or m_mode=="FT2") and received_rr73) m_dateTimeRcvdRR73=QDateTime::currentDateTimeUtc();
           m_bTUmsg=false;
           m_nextCall="";   //### Temporary: disable use of "TU;" message
           if(SpecOp::RTTY == m_specOp and m_nextCall!="") {
@@ -7393,8 +7432,9 @@ void MainWindow::processMessage (DecodedText const& message, Qt::KeyboardModifie
           }
       }
     }
-    else if (5 == message_words.size ()
-             && m_baseCall == message_words.at (1)) {
+    else if (composite_rr73_for_me
+             || (5 == message_words.size ()
+                 && m_baseCall == message_words.at (1))) {
       // dual Fox style message, possibly from MSHV
       if (m_config.prompt_to_log() || m_config.autoLog()) {
         logQSOTimer.start(0);
@@ -7701,6 +7741,7 @@ void MainWindow::genStdMsgs(QString rpt, bool unconditional)
       QString t2,t3;
       QString sent=rpt;
       QString rs,rst;
+      bool const both_nonstandard_77bit = !bMyCall && !bHisCall;
       int nn=(n+36)/6;
       if(nn<2) nn=2;
       if(nn>9) nn=9;
@@ -7737,9 +7778,49 @@ void MainWindow::genStdMsgs(QString rpt, bool unconditional)
         a = a.asprintf("%4.4d ",ui->sbSerialNumber->value());
         sent=rs + a + m_config.my_grid();
       }
-      msgtype(t + sent, ui->tx2);
-      if(sent==rpt) msgtype(t + "R" + sent, ui->tx3);
-      if(sent!=rpt) msgtype(t + "R " + sent, ui->tx3);
+      // Local fork heuristic: /P is treated as a standard suffix, so do not
+      // apply the 77-bit nonstandard compound-call rewrite when both our and
+      // his full calls are standard base calls with a /P suffix.
+      // This is a local divergence from upstream; arbitrary suffixes like /QRP
+      // are not considered standard and remain in the general compound-call path.
+      // The 77-bit nonstandard compound-call rewrite is also not applied when both
+      // calls are nonstandard 77-bit calls, even if one or both contain /P
+
+      if (is77BitMode () && SpecOp::NONE==m_specOp
+          && Radio::is_77bit_nonstandard_callsign (my_callsign)
+          && Radio::is_77bit_nonstandard_callsign (hisCall)
+          && !(!Radio::is_77bit_nonstandard_callsign (m_baseCall)
+               && hisCall.contains("/P")
+               && !Radio::is_77bit_nonstandard_callsign (hisBase)
+               && my_callsign.contains("/P"))) {
+        if (!is_compound && hisCall==hisBase && Radio::is_77bit_nonstandard_callsign (hisCall)) {
+          t="<" + hisBase + "> <" + m_baseCall + "> ";
+        }
+        if (!is_compound && hisCall!=hisBase) {
+          t=hisBase + " <" + my_callsign + "> ";
+        }
+        if ((is_compound || my_callsign.contains("/P") || hisCall!=hisBase)
+            && Radio::is_77bit_nonstandard_callsign (hisBase)) {
+          t="<" + hisCall + "> <" + my_callsign + "> ";
+        }
+        if (is_compound && hisCall.contains("/")
+            && !Radio::is_77bit_nonstandard_callsign (hisBase)
+            && hisCall!=hisBase) {
+          t=hisBase + " <" + my_callsign + "> ";
+        }
+        if (is_compound && !hisCall.contains("/P")
+            && (Radio::is_77bit_nonstandard_callsign (hisBase) || hisCall!=hisBase)) {
+          t="<" + hisCall + "> " + m_baseCall + " ";
+        }
+      }
+      if (both_nonstandard_77bit) {
+        msgtype(t, ui->tx2);
+        msgtype(t + " RRR", ui->tx3);
+      } else {
+        msgtype(t + sent, ui->tx2);
+        if(sent==rpt) msgtype(t + "R" + sent, ui->tx3);
+        if(sent!=rpt) msgtype(t + "R " + sent, ui->tx3);
+      }
       if((m_mode=="FT4" or m_mode=="FT2") and SpecOp::RTTY==m_specOp) {
         QDateTime now=QDateTime::currentDateTimeUtc();
         int sinceTx3 = m_dateTimeSentTx3.secsTo(now);
