@@ -3244,8 +3244,14 @@ bool MainWindow::eventFilter (QObject * object, QEvent * event)
           ui->dxCallEntry->clear();
           ui->dxGridEntry->clear();
           ui->txrb6->setChecked(true);
-          if (ui->cbAutoCall->isChecked() && m_bDoubleClicked) {
-            on_stopTxButton_clicked();
+          if (ui->cbAutoCall->isChecked()) {
+            m_btxok=false;
+            m_bCallingCQ = false;
+            m_bAutoReply = false;         // ready for next
+            ui->autoButton->setChecked (false);
+            on_autoButton_clicked (false);
+            stopWRTimer.stop();           // stop a running Tx3 timer
+            if (m_zdebug) log("Tx stopped by right-click on Erase button");
           }
           return true; // eat the event
         }
@@ -5874,8 +5880,14 @@ void MainWindow::on_EraseButton_clicked ()
     ui->dxCallEntry->clear();
     ui->dxGridEntry->clear();
     ui->txrb6->setChecked(true);
-    if (ui->cbAutoCall->isChecked() && m_bDoubleClicked) {
-      on_stopTxButton_clicked();
+    if (ui->cbAutoCall->isChecked()) {
+      m_btxok=false;
+      m_bCallingCQ = false;
+      m_bAutoReply = false;         // ready for next
+      ui->autoButton->setChecked (false);
+      on_autoButton_clicked (false);
+      stopWRTimer.stop();           // stop a running Tx3 timer
+      if (m_zdebug) log("Auto-sequencing stopped by triple Erase click");
     }
     m_nEraseClicks = 0;
   }
