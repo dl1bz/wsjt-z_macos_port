@@ -502,6 +502,7 @@ private:
   void switchBand(int row);
   void ZMessage();
   void ZProcess();
+  void clearPounceState();
 
   // Filter cache: parsed once when the QPlainTextEdit changes, reused per-decode.
   // Invalidated by textChanged signals connected in the ctor.
