@@ -1283,6 +1283,18 @@ MainWindow::MainWindow(QDir const& temp_directory, bool multiple,
 
     ui->verticalLayout_3->setAlignment(ui->outAttenuation, Qt::AlignHCenter);
     ui->w_callInfo->setVisible(ui->actionCall_info->isChecked());
+    ui->label_3->setText(tr("<a href=\"qrz-lookup\">DX Call</a>"));
+    ui->label_3->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    ui->label_3->setOpenExternalLinks(false);
+    connect(ui->label_3, &QLabel::linkActivated, this, [this](QString const &) {
+      QString dxCall = ui->ci_dxcall->text().trimmed();
+      if (dxCall.isEmpty()) dxCall = ui->dxCallEntry->text().trimmed();
+      if (!dxCall.isEmpty()) {
+        QDesktopServices::openUrl(QUrl("https://www.qrz.com/db/" + dxCall, QUrl::TolerantMode));
+      }
+    });
+    ui->l_q_email->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    ui->l_q_email->setOpenExternalLinks(true);
     qrzVisible(false);
 
 
@@ -8097,7 +8109,12 @@ void MainWindow::lookup()
 
 void MainWindow::on_lookupButton_clicked()                    //Lookup button
 {
+  if (!ui->w_callInfo->isVisible()) {
+    ui->actionCall_info->setChecked(true);
+    ui->w_callInfo->setVisible(true);
+  }
   lookup();
+  dxLookup(ui->dxCallEntry->text().trimmed().toUpper(), ui->dxGridEntry->text().trimmed().toUpper());
 }
 
 void MainWindow::on_addButton_clicked()                       //Add button
@@ -14064,7 +14081,7 @@ void MainWindow::qrzInit() {
     QUrlQuery query;
     query.addQueryItem("username", m_config.qrzComUn());
     query.addQueryItem("password", m_config.qrzComPw());
-    QUrl url("http://xmldata.qrz.com/xml/");
+    QUrl url("https://xmldata.qrz.com/xml/");
     url.setQuery(query);
     QNetworkRequest networkRequest(url);
     connect(networkManager, SIGNAL(finished(QNetworkReply*)), this, SLOT(qrzSetSessionKey(QNetworkReply*)));
@@ -14098,7 +14115,7 @@ void MainWindow::qrzSetSessionKey(QNetworkReply *r) {
 
     if (!error.isNull()) {
         qrzVisible(false);
-        MessageBox::critical_message (this, tr ("Error connecting to QRZ.COM"), error);
+        statusBar()->showMessage(tr("QRZ Login Failed: %1").arg(error), 5000);
     } else {
         qrzVisible(true);
         if (!qrzPendingLookupCall.isEmpty()) {
@@ -14119,7 +14136,7 @@ void MainWindow::qrzLookup(QString dxCall) {
     QUrlQuery query;
     query.addQueryItem("s", qrzSessionKey);
     query.addQueryItem("callsign", dxCall);
-    QUrl url("http://xmldata.qrz.com/xml/");
+    QUrl url("https://xmldata.qrz.com/xml/");
     url.setQuery(query);
     QNetworkRequest networkRequest(url);
     connect(networkManager, SIGNAL(finished(QNetworkReply*)), this, SLOT(qrzResponseHandler(QNetworkReply*)));
@@ -14128,7 +14145,7 @@ void MainWindow::qrzLookup(QString dxCall) {
 
 void MainWindow::qrzResponseHandler(QNetworkReply * r) {
     disconnect(networkManager, SIGNAL(finished(QNetworkReply*)), this, SLOT(qrzResponseHandler(QNetworkReply*)));
-    QString error = "";
+    QString error;
     if(r->error() == QNetworkReply::NoError) {
         QByteArray data = r->read(2048);
         QXmlStreamReader reader(data);
@@ -14164,8 +14181,14 @@ void MainWindow::qrzResponseHandler(QNetworkReply * r) {
                 }
 
                 if ( reader.name() == "email") {
-                    ui->q_email->setText(reader.readElementText());
+                    QString email = reader.readElementText().trimmed();
+                    ui->q_email->setText(email);
                     ui->q_email->setCursorPosition(0);
+                    if (!email.isEmpty()) {
+                        ui->l_q_email->setText(tr("<a href=\"mailto:%1\">Email</a>").arg(email.toHtmlEscaped()));
+                    } else {
+                        ui->l_q_email->setText(tr("Email"));
+                    }
                     continue;
                 }
 
@@ -14188,15 +14211,27 @@ void MainWindow::qrzResponseHandler(QNetworkReply * r) {
 
             }
         }
+    } else {
+        error = r->errorString();
+    }
 
-        if (error == "Invalid session key" || error == "Session Timeout") {
-            if (m_zdebug) log("QRZ Error: " + error);
-            qrzInit();
-        } else {
-            if (ui->ci_grid->text().length() > ui->dxGridEntry->text().length() && qrzPendingLookupCall == ui->dxCallEntry->text()) ui->dxGridEntry->setText(ui->ci_grid->text());
-            qrzPendingLookupCall = "";
-            ci_gridLookup();
+    if (error == "Invalid session key" || error == "Session Timeout") {
+        if (m_zdebug) log("QRZ Error: " + error);
+        statusBar()->showMessage(tr("QRZ session expired, reconnecting..."), 3000);
+        qrzInit();
+    } else {
+        if (!error.isEmpty()) {
+            statusBar()->showMessage(tr("QRZ Lookup Failed: %1").arg(error), 5000);
         }
+        auto const currentGrid = ui->dxGridEntry->text();
+        auto const lookedUpGrid = ui->ci_grid->text();
+        if (lookedUpGrid.length() > currentGrid.length()
+            && qrzPendingLookupCall == ui->dxCallEntry->text()
+            && lookedUpGrid.startsWith(currentGrid)) {
+            ui->dxGridEntry->setText(lookedUpGrid);
+        }
+        qrzPendingLookupCall = "";
+        ci_gridLookup();
     }
     r->deleteLater();
 }
@@ -14241,6 +14276,7 @@ void MainWindow::clearCallInfo() {
     ui->ci_dxcc->clear();
     ui->q_name->clear();
     ui->q_email->clear();
+    ui->l_q_email->setText(tr("Email"));
     ui->q_state->clear();
     ui->q_zipcode->clear();
     ui->q_addr1->clear();
