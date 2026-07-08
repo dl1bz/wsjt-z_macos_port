@@ -6089,13 +6089,19 @@ void MainWindow::auto_sequence (DecodedText const& message, unsigned start_toler
   auto const selected_dx_base = Radio::base_callsign (selected_dx_text);
   bool const have_selected_dx = !selected_dx_base.isEmpty ();
   auto msg_no_hash = message.clean_string();
+  if (m_zdebug) log("BEFORE remove<>: " + msg_no_hash.mid(22));
   msg_no_hash = msg_no_hash.mid(22).remove("<").remove(">");
 
   if (m_zdebug) log("msg_no_hash: " + msg_no_hash);
   if (m_zdebug) log("isStandardMessage: " +  QString::number(message.isStandardMessage()));
+  if (m_zdebug) log("message.is_composite_message(): " + QString::number(message.is_composite_message()));
 
   auto const& raw_words = msg_no_hash.split(" ",SkipEmptyParts);
   bool composite_rr73_detected = composite_rr73 (raw_words);
+  if (m_zdebug) log(QString("composite_rr73_detected: %1, raw_words.size: %2, raw_words[1]: %3")
+                    .arg(composite_rr73_detected)
+                    .arg(raw_words.size())
+                    .arg(raw_words.size() > 1 ? raw_words.at(1) : "N/A"));
   bool composite_rr73_for_me = composite_rr73_detected
     && (token_matches_call (raw_words.value (0), m_config.my_callsign ())
         || token_matches_call (raw_words.value (0), m_baseCall));
@@ -6209,6 +6215,18 @@ void MainWindow::auto_sequence (DecodedText const& message, unsigned start_toler
                            || message_words.at (2).contains (m_baseCall))))) {
       if(SpecOp::FOX != m_specOp)
       {
+          // Handle composite RR73 messages by setting target call to tertiary caller
+          if (m_zdebug) log (QString ("composite_rr73_for_me=%1 is_composite=%2 specOp=%3")
+                            .arg(composite_rr73_for_me)
+                            .arg(message.is_composite_message())
+                            .arg(static_cast<int>(m_specOp)));
+          if (composite_rr73_for_me && message.is_composite_message ())
+            {
+              auto const& fields = message.composite_message_fields ();
+              m_hisCall = fields.tertiary_caller;
+              if (m_zdebug) log (QString ("Composite RR73 for me: setting target to %1").arg (m_hisCall));
+            }
+          
           // Z
           if (m_zdebug) log(QString("auto_sequence response branch: hiscall=%1 hisgrid=%2 addressed_to_me=%3 within_tolerance=%4 acceptable_73=%5 m_transmitting=%6 m_ntx=%7")
                             .arg(hiscall)
