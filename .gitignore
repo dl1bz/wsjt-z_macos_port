@@ -26,6 +26,10 @@ lib.pre_decoder_port.bak/
 *.exe
 *.a
 *.stackdump
+*.DS_Store
+*.patch
+*.tgz
+*.patch
 
 # Claude Code artifacts
 .claude/

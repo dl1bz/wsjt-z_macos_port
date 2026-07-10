@@ -3286,7 +3286,6 @@ void MainWindow::displayDialFrequency ()
 {
   Frequency dial_frequency {m_rigState.ptt () && m_rigState.split () ?
       m_rigState.tx_frequency () : m_rigState.frequency ()};
-
   // lookup band
   auto const& band_name = m_config.bands ()->find (dial_frequency);
   if (m_lastBand != band_name)

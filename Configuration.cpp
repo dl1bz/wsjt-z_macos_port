@@ -4199,7 +4199,6 @@ void Configuration::impl::handle_transceiver_update (TransceiverState const& sta
       else close_rig ();
     }
 
-  // pass on to clients if current command is processed
   if (sequence_number == transceiver_command_number_)
     {
       TransceiverState reported_state {state};
