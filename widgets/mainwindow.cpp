@@ -7371,9 +7371,14 @@ void MainWindow::on_txrb2_toggled (bool status)
 void MainWindow::on_txrb2_doubleClicked ()
 {
   // Select TX4 with RR73
-  m_send_RR73 = true;
-  QTimer::singleShot (100, ui->txrb4, SLOT (click ()));
-  QTimer::singleShot (150, this, [this] () { genStdMsgs (m_rpt); });
+  // RR73 only allowed if not a type 2 compound callsign
+  auto const& my_callsign = m_config.my_callsign ();
+  auto is_compound = my_callsign != m_baseCall;
+  if(!((is_compound && !shortList (my_callsign)))) {
+    m_send_RR73 = true;
+  }
+  QTimer::singleShot (0, ui->txrb4, SLOT (click ()));
+  QTimer::singleShot (0, this, [this] () { genStdMsgs (m_rpt); });
 }
 
 void MainWindow::on_txrb3_toggled(bool status)
