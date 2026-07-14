@@ -716,19 +716,25 @@ MainWindow::MainWindow(QDir const& temp_directory, bool multiple,
     this->remote_configure (mode, frequency_tolerance, submode, fast_mode, tr_period, rx_df, dx_call, dx_grid, generate_messages, auto_cq_enabled, auto_call_enabled);
   });
   
-  // Only start listening if accept_udp_requests is enabled. Bind to
-  // localhost only so the remote-control surface (which can start
-  // automated TX) is not exposed to other hosts on the network.
+  // Only start listening if accept_udp_requests is enabled. The control
+  // surface can start automated TX, so bind it to the configured "UDP
+  // Server" address (defaults to 127.0.0.1, i.e. this host only). Set that
+  // field to 0.0.0.0 to deliberately expose it. If the value is not a
+  // literal IP (e.g. a hostname) fall back to localhost to stay safe.
   if (m_config.accept_udp_requests ())
     {
-      m_udp_server->start (m_config.udp_server_port (), QHostAddress {}, QSet<QString> {}, QHostAddress::LocalHost);
+      QHostAddress bind_addr {m_config.udp_server_name ()};
+      m_udp_server->start (m_config.udp_server_port (), QHostAddress {}, QSet<QString> {},
+                           bind_addr.isNull () ? QHostAddress {QHostAddress::LocalHost} : bind_addr);
     }
-  
+
   // Handle accept_udp_requests checkbox changes
   connect (&m_config, &Configuration::accept_udp_requests_changed, [this] (bool enable) {
     if (enable)
       {
-        m_udp_server->start (m_config.udp_server_port (), QHostAddress {}, QSet<QString> {}, QHostAddress::LocalHost);
+        QHostAddress bind_addr {m_config.udp_server_name ()};
+        m_udp_server->start (m_config.udp_server_port (), QHostAddress {}, QSet<QString> {},
+                             bind_addr.isNull () ? QHostAddress {QHostAddress::LocalHost} : bind_addr);
       }
     else
       {
@@ -740,7 +746,9 @@ MainWindow::MainWindow(QDir const& temp_directory, bool multiple,
   connect (&m_config, &Configuration::udp_server_port_changed, [this] (Configuration::port_type port) {
     if (m_config.accept_udp_requests ())
       {
-        m_udp_server->start (port, QHostAddress {}, QSet<QString> {}, QHostAddress::LocalHost);
+        QHostAddress bind_addr {m_config.udp_server_name ()};
+        m_udp_server->start (port, QHostAddress {}, QSet<QString> {},
+                             bind_addr.isNull () ? QHostAddress {QHostAddress::LocalHost} : bind_addr);
       }
   });
 
