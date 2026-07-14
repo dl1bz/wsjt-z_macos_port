@@ -1694,7 +1694,7 @@ void MainWindow::writeSettings()
 
   m_settings->setValue ("bandHopperEnabled", ui->cb_bandHopper->isChecked());
   m_settings->setValue ("bandHopper", ui->pte_bandHopper->toPlainText());
-
+  m_settings->setValue ("AutoCallPreferPSKSpotted", ui->cb_autoCallPreferPSKSpotted->isChecked());
 
   m_settings->setValue ("AutoCallPriority", ui->cb_autoCallPriority->currentIndex());
 
@@ -1937,6 +1937,7 @@ void MainWindow::readSettings()
   ui->cb_bandHopper->setChecked(m_settings->value("bandHopperEnabled", false).toBool());
   ui->pb_BandChangeNow->setVisible(ui->cb_bandHopper->isChecked());
   ui->pte_bandHopper->setPlainText(m_settings->value("bandHopper", "").toString());
+  ui->cb_autoCallPreferPSKSpotted->setChecked(m_settings->value("AutoCallPreferPSKSpotted", false).toBool());
   ui->cb_autoCallPriority->setCurrentIndex(m_settings->value ("AutoCallPriority", 0).toInt ());
   m_infoMessageShown = m_settings->value("infoMessageShown12-2024", false).toBool();
   ui->cb_ignoreCQTarget->setCurrentIndex(m_settings->value("ignoreCQTargetIndex", 0).toInt());
@@ -14310,36 +14311,50 @@ bool MainWindow::callsignFiltered(DecodedText dt)
       m_maxSignal = -31;
     }
 
-    if (!skipAutoPriority && ui->cb_autoCallPriority->currentIndex() == 2) {
-        if (dxGrid.length() == 4 && dxGrid != "RR73" && !dxGrid.startsWith("R-") && !dxGrid.startsWith("R+")) {
-            double utch=0.0;
-            int nAz,nEl,nDmiles,nDkm,nHotAz,nHotABetter;
-            azdist_(const_cast <char *> ((m_config.my_grid () + "      ").left (6).toLatin1 ().constData ()),
-                    const_cast <char *> (dxGrid.left (6).toLatin1 ().constData ()),&utch,
-                    &nAz,&nEl,&nDmiles,&nDkm,&nHotAz,&nHotABetter,6,6);
-            if (nDkm >  m_maxDistance) {
-                prio = true;
-                m_maxDistance = nDkm;
-            }
+    bool preferPSKSpotted = ui->cb_autoCallPreferPSKSpotted->isChecked() && m_config.psk_reporter_band_activity();
+    bool thisPskSpotted = preferPSKSpotted && m_pskReporterReceivers.contains(dxCall.toUpper());
+    bool currentPriorityPskSpotted = preferPSKSpotted && !m_priorityCall.isEmpty() && m_pskReporterReceivers.contains(m_priorityCall.toUpper());
 
-        } else {
+    if (!skipAutoPriority) {
+        bool pskPrio = preferPSKSpotted && thisPskSpotted && !currentPriorityPskSpotted;
+        if (pskPrio) {
             prio = true;
-            m_maxDistance = 1;
+        } else if (!preferPSKSpotted || (thisPskSpotted == currentPriorityPskSpotted)) {
+            // Fall through to standard priority checks only if PSK preference is off,
+            // or if both current and new candidates have the same PSK-spotted status.
+            switch (ui->cb_autoCallPriority->currentIndex()) {
+            case 2: // Distance
+                if (dxGrid.length() == 4 && dxGrid != "RR73" && !dxGrid.startsWith("R-") && !dxGrid.startsWith("R+")) {
+                    double utch=0.0;
+                    int nAz,nEl,nDmiles,nDkm,nHotAz,nHotABetter;
+                    azdist_(const_cast <char *> ((m_config.my_grid () + "      ").left (6).toLatin1 ().constData ()),
+                            const_cast <char *> (dxGrid.left (6).toLatin1 ().constData ()),&utch,
+                            &nAz,&nEl,&nDmiles,&nDkm,&nHotAz,&nHotABetter,6,6);
+                    if (nDkm > m_maxDistance) {
+                        prio = true;
+                        m_maxDistance = nDkm;
+                    }
+                } else {
+                    prio = true;
+                    m_maxDistance = 1;
+                }
+                break;
+            case 1: // Signal strength
+            {
+                bool convOK;
+                int intdbM = dbM.toInt(&convOK);
+                if (convOK && intdbM > m_maxSignal) {
+                    prio = true;
+                    m_maxSignal = intdbM;
+                }
+            }
+            break;
+            case 0: // Last decoded
+                prio = true;
+                break;
+            }
         }
-
-    } else if (!skipAutoPriority && ui->cb_autoCallPriority->currentIndex() == 1) {
-        bool convOK;
-        int intdbM = dbM.toInt(&convOK);
-        if (convOK && intdbM >  m_maxSignal) {
-               prio = true;
-               m_maxSignal = intdbM;
-
-       }
-
-    } else if (!skipAutoPriority && ui->cb_autoCallPriority->currentIndex() == 0) {
-        prio = true;
     }
-
 
     if (prio) {
         if (m_zdebug) log("++ New Priority Call: " + dxCall);
