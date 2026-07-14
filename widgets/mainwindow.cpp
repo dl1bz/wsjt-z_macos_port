@@ -13835,6 +13835,7 @@ void MainWindow::on_cbAutoCall_toggled(bool b)
 
     update_auto_call_pileup_mode_ui();
     auto_tx_mode(false);
+    m_autoModeSwitch = false;
   update_mode_switch_status_label ();
 }
 
@@ -13864,6 +13865,7 @@ void MainWindow::on_cbAutoCQ_toggled(bool b)
     }
 
     auto_tx_mode(b);
+    m_autoModeSwitch = false;
   update_mode_switch_status_label ();
 }
 
